@@ -1,0 +1,118 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>OTA Releases</title>
+  <style>
+    body { font: 15px system-ui; margin: 32px; background: #f6f7fb; color: #172033; }
+    h1 { margin: 0 0 7px; }
+    p { color: #5e6778; }
+    .card { background: #fff; border-radius: 12px; padding: 18px; box-shadow: 0 1px 8px #dfe3ec; overflow: auto; }
+    table { border-collapse: collapse; width: 100%; min-width: 760px; }
+    th, td { text-align: left; padding: 12px; border-bottom: 1px solid #e9edf4; }
+    th { color: #5e6778; }
+    button { border: 0; border-radius: 7px; padding: 8px 10px; background: #2563eb; color: #fff; cursor: pointer; }
+    button.off { background: #64748b; }
+    .active { color: #15803d; font-weight: 700; }
+    .inactive { color: #64748b; }
+  </style>
+</head>
+<body>
+  <h1>OTA Release Dashboard</h1>
+  <p>Activate a previous safe update to roll back. Nothing is deleted.</p>
+
+  <div class="card">
+    <table>
+      <thead>
+        <tr>
+          <th>Status</th>
+          <th>Message</th>
+          <th>Runtime</th>
+          <th>Published</th>
+          <th>Git</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+
+  <script>
+    const token =
+      sessionStorage.getItem("ota-token") ||
+      prompt("Admin token (leave blank only if none set):") ||
+      "";
+
+    sessionStorage.setItem("ota-token", token);
+
+    const headers = { "x-ota-admin-token": token };
+
+    function escapeHtml(value) {
+      return String(value ?? "").replace(/[&<>"']/g, (character) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;"
+      }[character]));
+    }
+
+    async function load() {
+      const response = await fetch("/api/admin/releases", { headers });
+
+      if (!response.ok) {
+        alert("Access denied. Set OTA_ADMIN_TOKEN correctly.");
+        return;
+      }
+
+      const data = await response.json();
+
+      document.querySelector("#rows").innerHTML = data.releases
+        .slice()
+        .reverse()
+        .map((release) => `
+          <tr>
+            <td class="${release.status}">${release.status}</td>
+            <td>${escapeHtml(release.message)}</td>
+            <td>${escapeHtml(release.runtimeVersion)} / ${escapeHtml(release.channel)}</td>
+            <td>${new Date(release.publishedAt).toLocaleString()}</td>
+            <td>${escapeHtml(release.gitCommit || "-")}</td>
+            <td>
+              ${
+                release.status === "active"
+                  ? `<button class="off" onclick="changeRelease('${release.id}', 'deactivate')">Deactivate</button>`
+                  : `<button onclick="changeRelease('${release.id}', 'activate')">Activate / Rollback</button>`
+              }
+            </td>
+          </tr>
+        `)
+        .join("");
+    }
+
+    async function changeRelease(id, action) {
+      const message =
+        action === "activate"
+          ? "Do you want to live or active  this release?  "
+          : " Are you sure you want to deactivate or turn off this release?";
+
+      if (!confirm(message)) return;
+
+      const response = await fetch(`/api/admin/releases/${id}/${action}`, {
+        method: "POST",
+        headers
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        alert(data.error);
+      }
+
+      load();
+    }
+
+    load();
+  </script>
+</body>
+</html>
